@@ -1,12 +1,13 @@
 package main
 
 import (
-	"fmt"
-	"github.com/jesusfar/go.mas/agent"
+    "fmt"
+    "github.com/jesusfar/go.mas/agent"
 )
 
 func main() {
-	agent := agent.New("My agent")
+    agent := agent.New("My agent")
 
-	fmt.Println(agent)
+    fmt.Println(agent)
+    agent.Run()
 }
