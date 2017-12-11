@@ -25,22 +25,22 @@ const (
 	REQUEST
 	REQUEST_WHEN
 	REQUEST_WHENEVER
-	SUBSCRIBRE
+	SUBSCRIBE
 )
 
 // Message struct based on FIPA ACL message
 type Message struct {
-	performative   Performative
-	sender         string
-	receiver       string
-	replyTo        string
-	content        string
-	language       string
-	encoding       string
-	ontology       string
-	protocol       string
-	conversationId string
-	replyWith      string
-	unReplyTo      string
-	replyBy        string
+	Performative   Performative `json:"performative"`
+	Sender         string `json:"sender"`
+	Receiver       string `json:"receiver"`
+	ReplyTo        string `json:"reply_to"`
+	Content        string `json:"content"`
+	Language       string `json:"language"`
+	Encoding       string `json:"encoding"`
+	Ontology       string `json:"ontology"`
+	Protocol       string `json:"protocol"`
+	ConversationId string `json:"conversation_id"`
+	ReplyWith      string `json:"reply_with"`
+	UnReplyTo      string `json:"un_reply_to"`
+	ReplyBy        string `json:"reply_by"`
 }

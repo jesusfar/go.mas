@@ -7,8 +7,8 @@ import (
 
 func TestMessage(t *testing.T) {
 
-	aclMessage := Message{performative: REQUEST}
+	aclMessage := Message{Performative: REQUEST}
 
-	assert.Equal(t, REQUEST, aclMessage.performative)
+	assert.Equal(t, REQUEST, aclMessage.Performative)
 
 }
