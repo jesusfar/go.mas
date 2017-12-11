@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/satori/go.uuid"
 	"time"
+	"github.com/garyburd/redigo/redis"
 )
 
 type Status int
@@ -42,15 +43,18 @@ type agent struct {
 	id     uuid.UUID
 	name   string
 	status Status
+
+	pubSubConn *redis.PubSubConn
 }
 
 // New creates a valid agent
-func New(name string) *agent {
+func New(name string, pubSubConn *redis.PubSubConn) *agent {
 	agent := &agent{}
 	agent.id = uuid.NewV4()
 	agent.name = name
 	agent.status = CREATED
 
+	agent.pubSubConn = pubSubConn
 	return agent
 }
 
@@ -75,8 +79,15 @@ func (a *agent) ChangeStatus(status Status) {
 
 // Run the agent
 func (a *agent) Run() {
-	go process()
 	a.ChangeStatus(RUNNING)
+	a.subscribe()
+
+	fmt.Printf("Agent: %s is %s", a.name, a.status)
+
+	for {
+		time.Sleep(1000 * time.Millisecond)
+		fmt.Println("Fetch from channel")
+	}
 }
 
 // Stop the agent
@@ -84,9 +95,7 @@ func (a *agent) Stop() {
 	a.ChangeStatus(STOPPED)
 }
 
-func process() {
-	for {
-		time.Sleep(1000 * time.Millisecond)
-		fmt.Println("Running ...")
-	}
+func (a *agent) subscribe()  {
+	// TODO handle subscribe
+	a.pubSubConn.Subscribe("mas-channel")
 }
