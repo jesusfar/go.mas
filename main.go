@@ -2,9 +2,10 @@ package main
 
 import (
 	"github.com/garyburd/redigo/redis"
-	"fmt"
 	"github.com/jesusfar/go.mas/agent"
-	"github.com/jesusfar/go.mas/aclmessage"
+	"log"
+	"github.com/jesusfar/go.mas/environment"
+	"fmt"
 )
 
 func getRedisConn() (redis.Conn, error) {
@@ -14,43 +15,43 @@ func getRedisConn() (redis.Conn, error) {
 func main() {
 
 	redisConn, err := getRedisConn()
-
 	if err != nil {
 		panic(err)
 	}
-
 	defer redisConn.Close()
 
 	redisConnPubSub, err := getRedisConn()
-
 	if err != nil {
 		panic(err)
 	}
-
 	defer redisConnPubSub.Close()
 
-
-
-	fmt.Println("Running...")
+	log.Println("Start running ...")
 
 	pubSubConn := redis.PubSubConn{Conn: redisConnPubSub}
 	defer pubSubConn.Close()
 
-	channel := "mas-env"
-
-	agent := agent.New("agent1", redisConn, &pubSubConn)
-
-	agent.Subscribe(channel)
-
-	agent.AddFriend("agent2")
-
-	message := aclmessage.Message{
-		Performative:aclmessage.REQUEST,
+	// Set environment
+	env := environment.Environment{
+		Conn: redisConn,
+		PubSubConn: &pubSubConn,
 	}
 
-	agent.SendMessage(channel, message)
+	agent1 := agent.New("agent1", &env)
 
-	fmt.Println(message)
+	// Agents subscribes to default channel
+	agent1.Subscribe(environment.DEFAULT_CHANNEL)
 
-	agent.Run()
+	agent1.AddFriend("agent2")
+
+	go agent1.Run()
+
+	agent2 := agent.New("agent2", &env)
+	agent2.Subscribe(environment.DEFAULT_CHANNEL)
+	agent2.AddFriend("agent1")
+
+	go agent2.Run()
+
+	var input string
+	fmt.Scanln(&input)
 }

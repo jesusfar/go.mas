@@ -1,13 +1,14 @@
 package agent
 
 import (
-	"fmt"
 	"github.com/satori/go.uuid"
 	"time"
 	"github.com/garyburd/redigo/redis"
 	"log"
 	"github.com/jesusfar/go.mas/aclmessage"
 	"encoding/json"
+	"github.com/jesusfar/go.mas/environment"
+	"fmt"
 )
 
 type Status int
@@ -49,19 +50,17 @@ type agent struct {
 
 	friends []string
 
-	conn redis.Conn
-	pubSubConn *redis.PubSubConn
+	env *environment.Environment
 }
 
 // New creates a valid agent
-func New(name string, conn redis.Conn, pubSubConn *redis.PubSubConn) *agent {
+func New(name string, env *environment.Environment) *agent {
 	agent := &agent{}
 	agent.id = uuid.NewV4()
 	agent.name = name
 	agent.status = CREATED
+	agent.env = env
 
-	agent.conn = conn
-	agent.pubSubConn = pubSubConn
 	return agent
 }
 
@@ -88,35 +87,18 @@ func (a *agent) ChangeStatus(status Status) {
 func (a *agent) Run() {
 	a.ChangeStatus(RUNNING)
 
-	log.Printf("Agent: %s status: %s \n", a.name, a.status)
+	a.logger(fmt.Sprintf("Status: %s", a.status))
 
 	a.process()
 }
 
 // Subscribe agent to channel
 func (a *agent) Subscribe(channel string)  {
-
-	err := a.pubSubConn.Subscribe(channel)
+	err := a.env.PubSubConn.Subscribe(channel)
 
 	// TODO handle error subscribe
 	if err != nil {
 		panic(err)
-	}
-}
-
-func (a *agent) SendMessage(channel string, message aclmessage.Message)  {
-
-	serializedMessage, err := json.Marshal(message)
-
-	if err != nil {
-		log.Printf("Error on sealization of message \n")
-		return
-	}
-
-	_, err = a.conn.Do("PUBLISH", channel, serializedMessage)
-
-	if err != nil {
-		log.Printf("error sending message \n")
 	}
 }
 
@@ -131,40 +113,82 @@ func (a *agent) IsFriend(agentName string) bool {
 }
 
 func (a *agent) AddFriend(agentName string)  {
-	log.Printf("Agent % add friend to %s", a.GetName(), agentName)
+	a.logger(fmt.Sprintf("Add friend to %s", agentName))
 	a.friends = append(a.friends, agentName)
 }
 
-func (a *agent) processMessage(messageInput []byte)  {
+func (a *agent) processMessage(messageData []byte)  {
+	a.logger(fmt.Sprintf("Message received: %s", string(messageData)))
 	var message aclmessage.Message
 
-	err := json.Unmarshal(messageInput, &message)
+	err := json.Unmarshal(messageData, &message)
 
 	if err != nil {
-		log.Println("Error parsing message")
+		a.logger("Error parsing message")
 		return
 	}
 
 	// Only process message if agent name is equal to receiver.
-	if message.Receiver == a.name && a.IsFriend(message.Sender) {
-		log.Println("Message accepted")
+	if message.Receiver == a.name {
+		a.logger(fmt.Sprintf("Message received from %s", message.Sender))
+		switch message.Performative {
+		case aclmessage.REQUEST:
+			a.logger("Try to process REQUEST")
+			go a.processRequest(message)
+		case aclmessage.AGREE:
+			a.logger("Try to process AGREE")
+			go a.processAgree(message)
+		case aclmessage.REFUSE:
+			a.logger("Try to process REFUSE")
+		case aclmessage.INFORM:
+			a.logger("Try to process INFORM")
+		}
 	}
+}
+
+func (a *agent) processRequest(message aclmessage.Message)  {
+	messageResponse := aclmessage.Message{
+		Sender: a.name,
+		Receiver: message.Sender,
+		Content: "Processing Request",
+	}
+
+	if !a.IsFriend(message.Sender) {
+		messageResponse.Performative = aclmessage.REFUSE;
+		a.env.SendMessage(environment.DEFAULT_CHANNEL, messageResponse)
+	}
+
+	// Send message Agree
+	messageResponse.Performative = aclmessage.AGREE;
+	a.env.SendMessage(environment.DEFAULT_CHANNEL, messageResponse)
+
+	// Execute task
+	a.logger("Executing tasks..")
+}
+
+func (a *agent) processAgree(message aclmessage.Message)  {
+	// Request was accepted by the agent sender
+	a.logger(fmt.Sprintf("Request was accepte by agent %s", message.Sender))
 }
 
 func (a *agent) process() {
 	for {
 		time.Sleep(1000 * time.Millisecond)
-		fmt.Println("Fetch from channel")
-		switch v := a.pubSubConn.Receive().(type) {
+		a.logger("Fetching from channel ...")
+		switch v := a.env.PubSubConn.Receive().(type) {
 		case redis.Message:
-			log.Printf(string(v.Data))
 			a.processMessage(v.Data)
 		case redis.Subscription:
-			log.Printf("Subscription: channel: %s type: %s count: %d\n", v.Channel, v.Kind, v.Count)
+			log.Printf("[%s] Subscription: channel: %s type: %s count: %d\n", a.GetName(), v.Channel, v.Kind, v.Count)
 
 		case error:
-			log.Println("error pub/sub, delivery has stopped \n")
+			a.logger("Error pub/sub, delivery has stopped \n")
 			return
 		}
 	}
+}
+
+func (a *agent) logger(message string)  {
+	defaultMessage := "[%s] " + message
+	log.Printf(defaultMessage, a.GetName())
 }
