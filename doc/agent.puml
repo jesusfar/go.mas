@@ -1,0 +1,18 @@
+@startuml
+
+title Agent Model
+
+class Agent {
+    id: uuid
+    name: String
+    status: State
+    friends: []String
+}
+
+Agent "1" *-- "0..*" Belief
+Agent "1" *-- "0..*" Desire
+Agent "1" *-- "0..*" Intention
+Agent "1" *-up- "0..*" Goal
+Agent "1" *-up- "0..*" Plan
+
+@enduml
