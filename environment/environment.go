@@ -1,31 +1,36 @@
 package environment
 
 import (
-	"github.com/garyburd/redigo/redis"
-	"github.com/jesusfar/go.mas/aclmessage"
-	"encoding/json"
+	"github.com/jesusfar/go.mas/agent"
+	"fmt"
 	"log"
 )
 
-const DEFAULT_CHANNEL string  = "mas-env"
-
 type Environment struct {
-	Conn redis.Conn
-	PoolConn *redis.Pool
-	PubSubConn *redis.PubSubConn
+	name string
+	agents []*agent.Agent
 }
 
-func (e *Environment) SendMessage(channel string, message aclmessage.Message)  {
-	serializedMessage, err := json.Marshal(message)
-
-	if err != nil {
-		log.Printf("[Environment] Error on sealization of message\n")
-		return
+func NewEnvironment(name string) *Environment {
+	env := Environment{
+		name: name,
 	}
+	return &env
+}
 
-	_, err = e.Conn.Do("PUBLISH", channel, serializedMessage)
+func (e *Environment) RegisterAgent(agent *agent.Agent)  {
+	e.agents = append(e.agents, agent)
+}
 
-	if err != nil {
-		log.Printf("[Environment] Error sending message \n")
+func (e *Environment) ShowAgents()  {
+	for _, agent := range e.agents {
+		fmt.Println(agent.GetName())
+	}
+}
+
+func (e *Environment) Run()  {
+	log.Println("[Environment] Run environment: " + e.name)
+	for _, agent := range e.agents  {
+		agent.Run()
 	}
 }

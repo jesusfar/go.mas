@@ -3,12 +3,11 @@ package agent
 import (
 	"github.com/satori/go.uuid"
 	"time"
-	"github.com/garyburd/redigo/redis"
 	"log"
 	"github.com/jesusfar/go.mas/aclmessage"
 	"encoding/json"
-	"github.com/jesusfar/go.mas/environment"
 	"fmt"
+	"github.com/jesusfar/go.mas/messaging"
 )
 
 type Status int
@@ -43,58 +42,72 @@ type event struct {
 	name string
 }
 
-type agent struct {
-	id     uuid.UUID
-	name   string
-	status Status
+type Agent struct {
+	id      uuid.UUID
+	name    string
+	status  Status
 
 	friends []string
 
-	env *environment.Environment
+	msgConn messaging.Messaging
 }
 
 // New creates a valid agent
-func New(name string, env *environment.Environment) *agent {
-	agent := &agent{}
+func New(name string, msgConn messaging.Messaging) *Agent {
+	agent := &Agent{}
 	agent.id = uuid.NewV4()
 	agent.name = name
 	agent.status = CREATED
-	agent.env = env
+	agent.msgConn = msgConn
+
+	// By default agent subscribe to broadcast channel
+	agent.Subscribe(messaging.BROADCAST_CHANNEL)
 
 	return agent
 }
 
 // GetId returns uuid agent
-func (a *agent) GetId() uuid.UUID {
+func (a *Agent) GetId() uuid.UUID {
 	return a.id
 }
 
 // GetName returns agent's name
-func (a *agent) GetName() string {
+func (a *Agent) GetName() string {
 	return a.name
 }
 
 // GetStatus returns agent's name
-func (a *agent) GetStatus() Status {
+func (a *Agent) GetStatus() Status {
 	return a.status
 }
 
-func (a *agent) ChangeStatus(status Status) {
+func (a *Agent) ChangeStatus(status Status) {
 	a.status = status
 }
 
 // Run the agent
-func (a *agent) Run() {
+func (a *Agent) Run() {
 	a.ChangeStatus(RUNNING)
 
-	a.logger(fmt.Sprintf("Status: %s", a.status))
+	message := aclmessage.Message{
+		Performative: aclmessage.PROPAGATE,
+		Sender: a.GetName(),
+		Receiver: "ALL",
+	}
+
+	a.SendMessage(messaging.BROADCAST_CHANNEL, message)
 
 	a.process()
 }
 
+func (a *Agent) SendMessage(channel string, message aclmessage.Message)  {
+	a.msgConn.Publish(channel, message)
+}
+
 // Subscribe agent to channel
-func (a *agent) Subscribe(channel string)  {
-	err := a.env.PubSubConn.Subscribe(channel)
+func (a *Agent) Subscribe(channel string)  {
+
+	err := a.msgConn.Subscribe(channel)
 
 	// TODO handle error subscribe
 	if err != nil {
@@ -102,7 +115,7 @@ func (a *agent) Subscribe(channel string)  {
 	}
 }
 
-func (a *agent) IsFriend(agentName string) bool {
+func (a *Agent) IsFriend(agentName string) bool {
 	for _,friend := range a.friends {
 		if friend == agentName {
 			return true
@@ -112,19 +125,19 @@ func (a *agent) IsFriend(agentName string) bool {
 	return false
 }
 
-func (a *agent) AddFriend(agentName string)  {
+func (a *Agent) AddFriend(agentName string)  {
 	a.logger(fmt.Sprintf("Add friend to %s", agentName))
 	a.friends = append(a.friends, agentName)
 }
 
-func (a *agent) processMessage(messageData []byte)  {
+func (a *Agent) processMessage(messageData []byte)  {
 	a.logger(fmt.Sprintf("Message received: %s", string(messageData)))
 	var message aclmessage.Message
 
 	err := json.Unmarshal(messageData, &message)
 
 	if err != nil {
-		a.logger("Error parsing message")
+		a.logger("Error parsing message. Message should be ACL FIPA")
 		return
 	}
 
@@ -146,7 +159,7 @@ func (a *agent) processMessage(messageData []byte)  {
 	}
 }
 
-func (a *agent) processRequest(message aclmessage.Message)  {
+func (a *Agent) processRequest(message aclmessage.Message)  {
 	messageResponse := aclmessage.Message{
 		Sender: a.name,
 		Receiver: message.Sender,
@@ -155,40 +168,34 @@ func (a *agent) processRequest(message aclmessage.Message)  {
 
 	if !a.IsFriend(message.Sender) {
 		messageResponse.Performative = aclmessage.REFUSE;
-		a.env.SendMessage(environment.DEFAULT_CHANNEL, messageResponse)
+		a.SendMessage(message.Sender, messageResponse)
 	}
 
 	// Send message Agree
 	messageResponse.Performative = aclmessage.AGREE;
-	a.env.SendMessage(environment.DEFAULT_CHANNEL, messageResponse)
+	a.SendMessage(message.Sender, messageResponse)
 
 	// Execute task
 	a.logger("Executing tasks..")
 }
 
-func (a *agent) processAgree(message aclmessage.Message)  {
+func (a *Agent) processAgree(message aclmessage.Message)  {
 	// Request was accepted by the agent sender
 	a.logger(fmt.Sprintf("Request was accepte by agent %s", message.Sender))
 }
 
-func (a *agent) process() {
-	for {
-		time.Sleep(1000 * time.Millisecond)
-		a.logger("Fetching from channel ...")
-		switch v := a.env.PubSubConn.Receive().(type) {
-		case redis.Message:
-			a.processMessage(v.Data)
-		case redis.Subscription:
-			log.Printf("[%s] Subscription: channel: %s type: %s count: %d\n", a.GetName(), v.Channel, v.Kind, v.Count)
-
-		case error:
-			a.logger("Error pub/sub, delivery has stopped \n")
-			return
+func (a *Agent) process() {
+	go func() {
+		for {
+			time.Sleep(1000 * time.Millisecond)
+			a.logger("Running...")
+			messageData := <- a.msgConn.GetMessageChannel()
+			a.processMessage(messageData)
 		}
-	}
+	}()
 }
 
-func (a *agent) logger(message string)  {
+func (a *Agent) logger(message string)  {
 	defaultMessage := "[%s] " + message
 	log.Printf(defaultMessage, a.GetName())
 }
