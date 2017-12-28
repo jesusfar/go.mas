@@ -104,6 +104,10 @@ func (a *Agent) SendMessage(channel string, message aclmessage.Message)  {
 	a.msgConn.Publish(channel, message)
 }
 
+func (a *Agent) Publish(message aclmessage.Message)  {
+	a.msgConn.Publish(a.GetId().String(), message)
+}
+
 // Subscribe agent to channel
 func (a *Agent) Subscribe(channel string)  {
 
