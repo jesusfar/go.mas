@@ -98,6 +98,7 @@ func (r *RedisMessaging) Run()  {
 				log.Printf("[RedisMessaging] Subscription: channel: %s type: %s count: %d\n", v.Channel, v.Kind, v.Count)
 			case error:
 				log.Println("[RedisMessaging] Error pub/sub, delivery has stopped.")
+				log.Println(v)
 				return
 			}
 		}

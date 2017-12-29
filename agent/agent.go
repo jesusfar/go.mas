@@ -89,11 +89,10 @@ func (a *Agent) ChangeStatus(status Status) {
 func (a *Agent) Run() {
 	a.ChangeStatus(RUNNING)
 
-	message := aclmessage.Message{
-		Performative: aclmessage.PROPAGATE,
-		Sender: a.GetName(),
-		Receiver: "ALL",
-	}
+	message := aclmessage.NewACLMessage(aclmessage.PROPAGATE)
+	message.Sender = a.GetName()
+	message.Receiver ="ALL"
+	message.Content = "I am ready."
 
 	a.SendMessage(messaging.BROADCAST_CHANNEL, message)
 
@@ -101,10 +100,12 @@ func (a *Agent) Run() {
 }
 
 func (a *Agent) SendMessage(channel string, message aclmessage.Message)  {
+	a.logger(fmt.Sprintf("Sending Message ConversationId: %s | Receiver: %s, | Performative: %s", message.ConversationId, message.Receiver, message.Performative))
 	a.msgConn.Publish(channel, message)
 }
 
 func (a *Agent) Publish(message aclmessage.Message)  {
+	a.logger(fmt.Sprintf("Publishing Message ConversationId: %s | Receiver: %s, | Performative: %s", message.ConversationId, message.Receiver, message.Performative))
 	a.msgConn.Publish(a.GetId().String(), message)
 }
 
@@ -113,9 +114,8 @@ func (a *Agent) Subscribe(channel string)  {
 
 	err := a.msgConn.Subscribe(channel)
 
-	// TODO handle error subscribe
 	if err != nil {
-		panic(err)
+		a.logger("Error subscribing to channel: " + channel)
 	}
 }
 
@@ -164,11 +164,11 @@ func (a *Agent) processMessage(messageData []byte)  {
 }
 
 func (a *Agent) processRequest(message aclmessage.Message)  {
-	messageResponse := aclmessage.Message{
-		Sender: a.name,
-		Receiver: message.Sender,
-		Content: "Processing Request",
-	}
+
+	messageResponse := aclmessage.NewACLMessage(aclmessage.AGREE)
+	messageResponse.Receiver = message.Sender
+	messageResponse.Sender = a.GetName()
+	messageResponse.Content = "Processing Request"
 
 	if !a.IsFriend(message.Sender) {
 		messageResponse.Performative = aclmessage.REFUSE;
@@ -176,7 +176,6 @@ func (a *Agent) processRequest(message aclmessage.Message)  {
 	}
 
 	// Send message Agree
-	messageResponse.Performative = aclmessage.AGREE;
 	a.SendMessage(message.Sender, messageResponse)
 
 	// Execute task
